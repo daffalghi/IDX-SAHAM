@@ -1,0 +1,6 @@
+venv/
+.env
+__pycache__/
+.streamlit/credentials.toml
+IDX-API/data/database.sqlite
+IDX-API/data/drizzle/
