@@ -134,8 +134,17 @@ def get_stock_recommendation(ticker: str):
         w_ema20 = weekly_ema20.iloc[-1] if (weekly_ema20 is not None and len(weekly_ema20)>0) else close
         
         if not ihsg_bullish or adx_val < 25 or close < w_ema20 or close >= (bb_upper * 0.98) or rsi > 75:
-            # Gagal mandatory filter
-            return None # Skip saham ini dari rekomendasi
+            return {
+                "ticker": ticker,
+                "signal": "Skip",
+                "strategy": "Gagal Mandatory Filter (Bukan tren yang kuat atau risiko tinggi).",
+                "score": 0,
+                "rsi": rsi,
+                "macd": "Bullish" if macd_l > macd_s else "Bearish",
+                "close": close,
+                "pe": round(per, 2) if per != 999 else "N/A",
+                "pbv": round(info.get('priceToBook', 0) or 0, 2)
+            }
             
         # --- 2. CORE SCORE (100 POIN) ---
         score = 0
@@ -192,7 +201,17 @@ def get_stock_recommendation(ticker: str):
             stop_loss = f"Cut Loss jika tutup di bawah EMA-20 (Rp {int(ema20)})"
             alasan = f"SCORE {score}/100: Memenuhi standar kuantitatif institusi, momentum stabil."
         else:
-            return None # Skip jika skor di bawah 70
+            return {
+                "ticker": ticker,
+                "signal": "Neutral",
+                "strategy": f"Skor terlalu rendah ({score}/100) untuk masuk kriteria Buy.",
+                "score": score,
+                "rsi": rsi,
+                "macd": "Bullish" if macd_l > macd_s else "Bearish",
+                "close": close,
+                "pe": round(per, 2) if per != 999 else "N/A",
+                "pbv": round(info.get('priceToBook', 0) or 0, 2)
+            }
             
         strategy = f"👉 **Tindakan**: {action}\n"
         strategy += f"⏱️ **Target Hold**: {target}\n"
@@ -212,4 +231,6 @@ def get_stock_recommendation(ticker: str):
             "pbv": round(info.get('priceToBook', 0) or 0, 2)
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return None
