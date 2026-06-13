@@ -78,6 +78,15 @@ def run_auto_scan():
             print(f"[ERROR] Gagal mengirim pesan ke Telegram: {info}")
     else:
         print("Tidak ada saham dengan sinyal Buy yang cukup kuat hari ini.")
+        msg = "🤖 *AUTO SCAN: REKOMENDASI SAHAM HARI INI*\n\n"
+        msg += "Hari ini *TIDAK ADA* saham yang lolos filter ketat algoritma 100-Poin (Level Institusi) kita.\n\n"
+        msg += "Kondisi pasar saat ini kemungkinan sedang tidak kondusif (sideways/downtrend) atau saham-saham likuid sedang berada di area risiko tinggi (Overbought/Dekat Resistance). Lebih baik bersabar (Wait & See) untuk melindungi modal Anda hari ini. 🛡️"
+        
+        success, info = send_telegram_message(msg)
+        if success:
+            print("[SUCCESS] Berhasil mengirim notifikasi perlindungan modal ke Telegram!")
+        else:
+            print(f"[ERROR] Gagal mengirim pesan ke Telegram: {info}")
         
 import schedule
 import time
