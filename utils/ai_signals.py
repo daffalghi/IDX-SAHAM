@@ -133,7 +133,7 @@ def get_stock_recommendation(ticker: str):
                 
         w_ema20 = weekly_ema20.iloc[-1] if (weekly_ema20 is not None and len(weekly_ema20)>0) else close
         
-        if not ihsg_bullish or adx_val < 25 or close < w_ema20 or close >= (bb_upper * 0.98) or rsi > 75:
+        if adx_val < 20 or close < w_ema20 or close >= (bb_upper * 0.98) or rsi > 75:
             return {
                 "ticker": ticker,
                 "signal": "Skip",
@@ -148,6 +148,10 @@ def get_stock_recommendation(ticker: str):
             
         # --- 2. CORE SCORE (100 POIN) ---
         score = 0
+        
+        # Penalti jika IHSG sedang Downtrend (Hanya penalti, tidak langsung skip)
+        if not ihsg_bullish:
+            score -= 5
         
         # A. Trend Strength (22)
         if close > ema20: score += 8
