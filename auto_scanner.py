@@ -12,6 +12,11 @@ def run_auto_scan():
     print("Memulai proses Auto-Scan Saham menggunakan AI...")
     
     try:
+        print("Sinkronisasi database terbaru dari IDX-API...")
+        import subprocess
+        subprocess.run(["deno", "run", "-A", "sync_init.ts"], cwd="IDX-API", check=True)
+        print("Sinkronisasi database berhasil!")
+        
         # Menghubungkan ke database lokal IDX-API
         conn = sqlite3.connect('IDX-API/data/database.sqlite')
         

@@ -1,10 +1,23 @@
 import * as sync from '@app/Backend/Sync/index.ts';
 
 async function main() {
-  // Use yesterday's date (assuming today is 2026-06-10, yesterday was 2026-06-09)
-  const dateStr = '20260609';
-  const year = 2026;
-  const month = 6;
+  const now = new Date();
+  // Jika jam < 16:00 WIB (09:00 UTC), ambil tanggal kemarin karena bursa hari ini belum tutup
+  if (now.getUTCHours() < 9) {
+    now.setDate(now.getDate() - 1);
+  }
+  
+  // Skip weekend (Minggu = 0, Sabtu = 6), ambil hari Jumat
+  if (now.getDay() === 0) now.setDate(now.getDate() - 2);
+  if (now.getDay() === 6) now.setDate(now.getDate() - 1);
+  
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  
+  const dateStr = `${y}${m}${d}`;
+  const year = y;
+  const month = now.getMonth() + 1;
 
   try {
     console.log('Syncing Stock Summary for ' + dateStr);
