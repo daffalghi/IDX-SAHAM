@@ -7,21 +7,24 @@ on:
     - cron: '30 9 * * 1-5'
   workflow_dispatch: # Mengizinkan untuk di-klik manual ("Run workflow") dari website GitHub
 
+permissions:
+  contents: write
+
 jobs:
   sync_and_scan:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Deno
-      uses: denoland/setup-deno@v1
+      uses: denoland/setup-deno@v2
       with:
         deno-version: v1.x
 
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         
@@ -30,12 +33,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pandas-ta python-dotenv schedule
-        
-    - name: Sync Data dari IDX-API
-      run: |
-        cd IDX-API
-        deno task db:sync
-        deno run -A sync_init.ts
         
     - name: Jalankan AI Auto Scanner & Kirim ke Telegram
       env:
