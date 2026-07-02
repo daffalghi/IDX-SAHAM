@@ -74,6 +74,7 @@ def run_auto_scan():
             msg += f"*{res['ticker']}* {signal_emoji} *{res['signal']}*\n"
             msg += f"💰 Harga: Rp {res['close']:,.0f}\n"
             msg += f"📊 RSI: {res['rsi']:.2f} | MACD: {res['macd']}\n"
+            msg += f"📰 Berita: {res.get('news', 'Netral')}\n"
             msg += f"💡 *Strategi*: {res['strategy']}\n\n"
             
         success, info = send_telegram_message(msg)

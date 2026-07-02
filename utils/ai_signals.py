@@ -26,6 +26,41 @@ def get_foreign_net(ticker: str, days=3):
     except:
         return False
 
+def get_news_sentiment(stock_obj):
+    try:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        analyzer = SentimentIntensityAnalyzer()
+        news = stock_obj.news
+        if not news:
+            return 0, "Netral (Tidak ada berita)"
+            
+        total_score = 0
+        count = 0
+        for article in news[:5]: # Ambil maksimal 5 berita terbaru
+            title = article.get('title', '')
+            summary = article.get('summary', '')
+            text = f"{title}. {summary}"
+            if text.strip() != ". ":
+                score = analyzer.polarity_scores(text)['compound']
+                total_score += score
+                count += 1
+                
+        if count == 0:
+            return 0, "Netral (Tidak ada berita)"
+            
+        avg_score = total_score / count
+        
+        if avg_score > 0.15:
+            return 5, f"Positif (+5) | Terdapat {count} katalis bagus."
+        elif avg_score < -0.50:
+            return -10, f"Sangat Negatif (-10) | Bahaya! Ada bad news ekstrem."
+        elif avg_score < -0.15:
+            return -5, f"Negatif (-5) | Terdapat sentimen buruk."
+        else:
+            return 0, "Netral | Tidak ada sentimen penggerak."
+    except Exception as e:
+        return 0, "Netral (Error mengambil berita)"
+
 def get_macro_data():
     global MACRO_DATA
     if 'ihsg' not in MACRO_DATA:
@@ -181,6 +216,10 @@ def get_stock_recommendation(ticker: str):
         if gap < 0.04: score += 3
         if vol > (avg_vol * 1.2): score += 5
         
+        # F. SENTIMENT ANALYSIS (NLP)
+        news_score, news_desc = get_news_sentiment(stock)
+        score += news_score
+        
         # --- PENALTY SYSTEM ---
         # Volatility Regime (Mencegah beli saham gorengan liar)
         atr_pct = atr / close
@@ -214,7 +253,8 @@ def get_stock_recommendation(ticker: str):
                 "macd": "Bullish" if macd_l > macd_s else "Bearish",
                 "close": close,
                 "pe": round(per, 2) if per != 999 else "N/A",
-                "pbv": round(info.get('priceToBook', 0) or 0, 2)
+                "pbv": round(info.get('priceToBook', 0) or 0, 2),
+                "news": news_desc
             }
             
         strategy = f"👉 **Tindakan**: {action}\n"
@@ -232,7 +272,8 @@ def get_stock_recommendation(ticker: str):
             "macd": "Bullish" if macd_l > macd_s else "Bearish",
             "close": close,
             "pe": round(per, 2) if per != 999 else "N/A",
-            "pbv": round(info.get('priceToBook', 0) or 0, 2)
+            "pbv": round(info.get('priceToBook', 0) or 0, 2),
+            "news": news_desc
         }
     except Exception as e:
         import traceback
