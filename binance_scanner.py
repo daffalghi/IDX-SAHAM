@@ -1,54 +1,97 @@
 import os
 import schedule
 import time
+import ccxt
 from utils.crypto_signals import get_crypto_recommendation
 from utils.telegram_bot import send_telegram_message
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Top 10 Liquid Coins to Scan on Binance USDT Futures
-COINS_TO_SCAN = [
-    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", 
-    "XRP/USDT", "DOGE/USDT", "ADA/USDT", "AVAX/USDT", 
-    "LINK/USDT", "DOT/USDT"
-]
-
 def run_binance_scan():
-    print("Memulai proses Auto-Scan Binance Futures...")
+    print("Memulai proses Auto-Scan Binance (Spot & Futures All-Coins)...")
     
-    signals = []
+    # 1. Inisialisasi CCXT Spot & Futures
+    try:
+        spot_exchange = ccxt.binance({
+            'enableRateLimit': True,
+            'options': {'defaultType': 'spot'}
+        })
+        
+        futures_exchange = ccxt.binance({
+            'enableRateLimit': True,
+            'options': {'defaultType': 'future'}
+        })
+        
+        print("Menarik daftar seluruh koin USDT dari Binance...")
+        spot_markets = spot_exchange.load_markets()
+        futures_markets = futures_exchange.load_markets()
+        
+        # Ambil semua simbol USDT yang aktif
+        spot_symbols = [s for s in spot_markets if s.endswith('/USDT') and spot_markets[s]['active']]
+        futures_symbols = [s for s in futures_markets if s.endswith('/USDT') and futures_markets[s]['active']]
+        
+        print(f"Ditemukan {len(spot_symbols)} koin Spot dan {len(futures_symbols)} koin Futures.")
+        
+    except Exception as e:
+        print(f"Gagal terhubung ke Binance: {e}")
+        return
+        
+    spot_signals = []
+    futures_signals = []
     
-    for coin in COINS_TO_SCAN:
-        print(f"Menganalisis {coin}...")
-        res = get_crypto_recommendation(coin, timeframe="4h")
+    # 2. Pindai Koin Futures (Prioritas)
+    print("\n[+] Memindai Pasar Futures...")
+    for sym in futures_symbols:
+        res = get_crypto_recommendation(futures_exchange, sym, market_type="future", timeframe="4h")
         if res:
-            signals.append(res)
-            print(f"[+] {coin} | Signal: {res['signal']}")
-        else:
-            print(f"[-] {coin} | Neutral / Skip")
+            futures_signals.append(res)
+            print(f"   -> [FUTURES] {sym}: {res['signal']} (Score: {res['score']})")
+        time.sleep(0.1) # Hindari Rate Limit
+            
+    # 3. Pindai Koin Spot (Termasuk Micin)
+    print("\n[+] Memindai Pasar Spot...")
+    # Batasi spot max 300 koin teratas berdasarkan volume agar tidak terlalu lama (opsional)
+    # Di sini kita scan semua untuk menangkap micin
+    for sym in spot_symbols:
+        res = get_crypto_recommendation(spot_exchange, sym, market_type="spot", timeframe="4h")
+        if res:
+            spot_signals.append(res)
+            print(f"   -> [SPOT] {sym}: {res['signal']} (Score: {res['score']})")
+        time.sleep(0.1) # Hindari Rate Limit
             
     print("\nMenyusun pesan untuk Telegram...")
     
-    if signals:
-        msg = "🤖 *BINANCE FUTURES 4H SCANNER*\n\n"
-        for res in signals:
+    # Urutkan berdasarkan skor tertinggi (yang volumenya melonjak)
+    spot_signals.sort(key=lambda x: x['score'], reverse=True)
+    futures_signals.sort(key=lambda x: x['score'], reverse=True)
+    
+    # Ambil Top 5 untuk masing-masing agar tidak SPAM
+    top_spot = spot_signals[:5]
+    top_futures = futures_signals[:5]
+    
+    msg = "🤖 *BINANCE 4H ALL-COIN SCANNER*\n\n"
+    
+    if top_futures:
+        msg += "📈 *TOP 5 FUTURES SIGNALS*\n"
+        for res in top_futures:
             msg += f"*{res['ticker']}* {res['signal']}\n"
-            msg += f"💰 Entry Harga: {res['close']:.4f}\n"
-            msg += f"🎯 Target (TP): {res['target']}\n"
-            msg += f"🛑 Stop Loss: {res['stop_loss']}\n"
-            msg += f"💡 Aksi: *{res['action']}*\n\n"
+            msg += f"Entry: {res['close']:.6f} | TP: {res['target']} | SL: {res['stop_loss']}\n\n"
             
-        success, info = send_telegram_message(msg)
-        if success:
-            print("[SUCCESS] Berhasil mengirim notifikasi Binance Futures ke Telegram!")
-        else:
-            print(f"[ERROR] Gagal mengirim pesan ke Telegram: {info}")
+    if top_spot:
+        msg += "💎 *TOP 5 SPOT (MICIN) SIGNALS*\n"
+        for res in top_spot:
+            msg += f"*{res['ticker']}* {res['signal']}\n"
+            msg += f"Harga: {res['close']:.6f} | TP: {res['target']} | SL: {res['stop_loss']}\n\n"
+            
+    if not top_futures and not top_spot:
+        msg += "Saat ini tidak ada koin (Spot maupun Futures) yang menembus filter momentum & volume. Wait & See. ☕"
+        
+    success, info = send_telegram_message(msg)
+    if success:
+        print("[SUCCESS] Berhasil mengirim notifikasi Binance ke Telegram!")
     else:
-        print("Tidak ada sinyal kripto saat ini.")
-        # Optional: Send a heartbeat message to Telegram
-        msg = "🤖 *BINANCE FUTURES 4H SCANNER*\n\nSaat ini tidak ada sinyal LONG/SHORT yang valid di Top 10 Coins. Wait & See. ☕"
-        send_telegram_message(msg)
+        print(f"[ERROR] Gagal mengirim pesan ke Telegram: {info}")
 
 def job():
     run_binance_scan()
@@ -60,13 +103,8 @@ if __name__ == "__main__":
         run_binance_scan()
         sys.exit(0)
         
-    print("[INFO] Menjalankan Binance Futures Auto-Scanner di Background (Local)...")
-    print("Pemindaian akan dilakukan setiap 4 Jam.")
-    
-    # Jadwalkan eksekusi setiap 4 jam
+    print("[INFO] Menjalankan Binance Scanner di Background (Local)...")
     schedule.every(4).hours.do(job)
-    
-    # Langsung jalankan sekali saat script dinyalakan
     job()
     
     while True:

@@ -1,25 +1,20 @@
-import ccxt
 import pandas as pd
 import pandas_ta as ta
 
-def get_crypto_recommendation(symbol: str, timeframe: str = "4h"):
+def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future", timeframe: str = "4h"):
+    """
+    Menganalisis koin menggunakan CCXT exchange instance.
+    market_type: "future" atau "spot"
+    """
     try:
-        # Gunakan CCXT untuk menarik data Binance USDT Futures
-        exchange = ccxt.binance({
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'future',
-            }
-        })
-        
         # Ambil 100 candle terakhir
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
+        if not ohlcv or len(ohlcv) < 50:
+            return None
+            
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         
-        if df.empty or len(df) < 50:
-            return None
-            
         # Hitung Indikator Teknikal
         df['EMA_9'] = ta.ema(df['close'], length=9)
         df['EMA_21'] = ta.ema(df['close'], length=21)
@@ -44,10 +39,15 @@ def get_crypto_recommendation(symbol: str, timeframe: str = "4h"):
         macd_s = last.get('MACDs_12_26_9', 0)
         atr = last.get('ATRr_14', close * 0.02)
         
+        # Volume Surge Detector (Apakah volume saat ini 2x lipat dari rata-rata volume 20 candle terakhir?)
+        avg_vol = df['volume'].rolling(20).mean().iloc[-2]
+        current_vol = df['volume'].iloc[-1]
+        volume_surge = current_vol > (avg_vol * 1.5)
+        
         # Logika LONG (Beli)
         long_cond = close > ema50 and ema9 > ema21 and rsi > 50 and macd_l > macd_s
         
-        # Logika SHORT (Jual)
+        # Logika SHORT (Jual) (HANYA UNTUK FUTURES)
         short_cond = close < ema50 and ema9 < ema21 and rsi < 50 and macd_l < macd_s
         
         signal = "Neutral"
@@ -57,22 +57,28 @@ def get_crypto_recommendation(symbol: str, timeframe: str = "4h"):
         score = 50
         
         if long_cond:
-            signal = "LONG 🚀"
-            action = "Beli / Long Position"
-            # Target 2x ATR, Stop Loss 1.5x ATR
-            target = f"{close + (2 * atr):.4f}"
-            stop_loss = f"{close - (1.5 * atr):.4f}"
-            score = 80
-        elif short_cond:
+            if market_type == "spot" and not volume_surge:
+                # Untuk spot (terutama micin), butuh ledakan volume untuk dianggap kuat
+                pass
+            else:
+                signal = "LONG 🚀"
+                action = "Beli Spot" if market_type == "spot" else "Beli / Long Position"
+                target = f"{close + (2 * atr):.6f}"
+                stop_loss = f"{close - (1.5 * atr):.6f}"
+                score = 80
+                if volume_surge:
+                    score += 15 # Poin plus untuk ledakan volume
+                    signal = "STRONG BUY 💥"
+                    
+        elif short_cond and market_type == "future":
             signal = "SHORT 🩸"
             action = "Jual / Short Position"
-            # Target 2x ATR, Stop Loss 1.5x ATR ke atas
-            target = f"{close - (2 * atr):.4f}"
-            stop_loss = f"{close + (1.5 * atr):.4f}"
-            score = 20
+            target = f"{close - (2 * atr):.6f}"
+            stop_loss = f"{close + (1.5 * atr):.6f}"
+            score = 75
             
         if signal == "Neutral":
-            return None # Skip jika netral agar tidak memenuhi pesan Telegram
+            return None # Skip jika netral
             
         return {
             "ticker": symbol,
@@ -82,9 +88,10 @@ def get_crypto_recommendation(symbol: str, timeframe: str = "4h"):
             "rsi": rsi,
             "target": target,
             "stop_loss": stop_loss,
-            "score": score
+            "score": score,
+            "market": market_type.upper()
         }
         
     except Exception as e:
-        print(f"[ERROR] Gagal memproses {symbol}: {e}")
+        # Silenced error to avoid spamming the logs when scanning 300 coins
         return None
