@@ -8,3 +8,4 @@ pandas-ta
 python-dotenv
 schedule
 vaderSentiment
+ccxt
