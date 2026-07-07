@@ -54,7 +54,13 @@ def job():
     run_binance_scan()
 
 if __name__ == "__main__":
-    print("[INFO] Menjalankan Binance Futures Auto-Scanner di Background...")
+    import sys
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("[INFO] Berjalan di GitHub Actions. Mengeksekusi 1 kali pemindaian...")
+        run_binance_scan()
+        sys.exit(0)
+        
+    print("[INFO] Menjalankan Binance Futures Auto-Scanner di Background (Local)...")
     print("Pemindaian akan dilakukan setiap 4 Jam.")
     
     # Jadwalkan eksekusi setiap 4 jam
