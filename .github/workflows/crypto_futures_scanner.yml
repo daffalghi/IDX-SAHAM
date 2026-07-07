@@ -2,8 +2,8 @@ name: Crypto Futures 4H Scanner
 
 on:
   schedule:
-    # Berjalan setiap 4 jam sekali di menit ke-0
-    - cron: '0 */4 * * *'
+    # Berjalan setiap 1 jam sekali di menit ke-0
+    - cron: '0 * * * *'
   workflow_dispatch: # Izinkan eksekusi manual via tombol "Run workflow"
 
 jobs:

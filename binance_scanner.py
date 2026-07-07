@@ -43,7 +43,7 @@ def run_binance_scan():
     # 2. Pindai Koin Futures (Prioritas)
     print("\n[+] Memindai Pasar Futures...")
     for sym in futures_symbols:
-        res = get_crypto_recommendation(futures_exchange, sym, market_type="future", timeframe="4h")
+        res = get_crypto_recommendation(futures_exchange, sym, market_type="future", timeframe="1h")
         if res:
             futures_signals.append(res)
             print(f"   -> [FUTURES] {sym}: {res['signal']} (Score: {res['score']})")
@@ -54,7 +54,7 @@ def run_binance_scan():
     # Batasi spot max 300 koin teratas berdasarkan volume agar tidak terlalu lama (opsional)
     # Di sini kita scan semua untuk menangkap micin
     for sym in spot_symbols:
-        res = get_crypto_recommendation(spot_exchange, sym, market_type="spot", timeframe="4h")
+        res = get_crypto_recommendation(spot_exchange, sym, market_type="spot", timeframe="1h")
         if res:
             spot_signals.append(res)
             print(f"   -> [SPOT] {sym}: {res['signal']} (Score: {res['score']})")
@@ -70,7 +70,7 @@ def run_binance_scan():
     top_spot = spot_signals[:5]
     top_futures = futures_signals[:5]
     
-    msg = "🤖 *BINANCE 4H ALL-COIN SCANNER*\n\n"
+    msg = "🤖 *BINANCE 1H ALL-COIN SCANNER*\n\n"
     
     if top_futures:
         msg += "📈 *TOP 5 FUTURES SIGNALS*\n"
@@ -104,7 +104,7 @@ if __name__ == "__main__":
         sys.exit(0)
         
     print("[INFO] Menjalankan Binance Scanner di Background (Local)...")
-    schedule.every(4).hours.do(job)
+    schedule.every(1).hours.do(job)
     job()
     
     while True:
