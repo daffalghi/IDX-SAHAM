@@ -76,13 +76,17 @@ def run_binance_scan():
         msg += "📈 *TOP 5 FUTURES SIGNALS*\n"
         for res in top_futures:
             msg += f"*{res['ticker']}* {res['signal']}\n"
-            msg += f"Entry: {res['close']:.6f} | TP: {res['target']} | SL: {res['stop_loss']}\n\n"
+            msg += f"Entry: {res['close']:.6f}\n"
+            msg += f"🎯 TP 1: {res['target1']} | 🎯 TP 2: {res['target2']}\n"
+            msg += f"🛑 SL: {res['stop_loss']}\n\n"
             
     if top_spot:
         msg += "💎 *TOP 5 SPOT (MICIN) SIGNALS*\n"
         for res in top_spot:
             msg += f"*{res['ticker']}* {res['signal']}\n"
-            msg += f"Harga: {res['close']:.6f} | TP: {res['target']} | SL: {res['stop_loss']}\n\n"
+            msg += f"Harga: {res['close']:.6f}\n"
+            msg += f"🎯 TP 1: {res['target1']} | 🎯 TP 2: {res['target2']}\n"
+            msg += f"🛑 SL: {res['stop_loss']}\n\n"
             
     if not top_futures and not top_spot:
         msg += "Saat ini tidak ada koin (Spot maupun Futures) yang menembus filter momentum & volume. Wait & See. ☕"

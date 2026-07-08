@@ -52,7 +52,8 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
         
         signal = "Neutral"
         action = "Wait & See"
-        target = "-"
+        target1 = "-"
+        target2 = "-"
         stop_loss = "-"
         score = 50
         
@@ -63,7 +64,9 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
             else:
                 signal = "LONG 🚀"
                 action = "Beli Spot" if market_type == "spot" else "Beli / Long Position"
-                target = f"{close + (2 * atr):.6f}"
+                # Target 1: 1.5x ATR, Target 2: 3x ATR, Stop Loss: 1.5x ATR
+                target1 = f"{close + (1.5 * atr):.6f}"
+                target2 = f"{close + (3 * atr):.6f}"
                 stop_loss = f"{close - (1.5 * atr):.6f}"
                 score = 80
                 if volume_surge:
@@ -73,7 +76,8 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
         elif short_cond and market_type == "future":
             signal = "SHORT 🩸"
             action = "Jual / Short Position"
-            target = f"{close - (2 * atr):.6f}"
+            target1 = f"{close - (1.5 * atr):.6f}"
+            target2 = f"{close - (3 * atr):.6f}"
             stop_loss = f"{close + (1.5 * atr):.6f}"
             score = 75
             
@@ -86,7 +90,8 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
             "action": action,
             "close": close,
             "rsi": rsi,
-            "target": target,
+            "target1": target1,
+            "target2": target2,
             "stop_loss": stop_loss,
             "score": score,
             "market": market_type.upper()
