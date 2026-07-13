@@ -1,6 +1,9 @@
 name: Crypto Futures 4H Scanner
 
 on:
+  push:
+    branches:
+      - master
   schedule:
     # Berjalan setiap 1 jam sekali di menit ke-0
     - cron: '0 * * * *'
