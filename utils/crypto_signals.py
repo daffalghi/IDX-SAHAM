@@ -81,6 +81,22 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
             stop_loss = f"{close + (1.5 * atr):.6f}"
             score = 75
             
+        # Rekomendasi Leverage (Hanya Futures)
+        margin_mode = "-"
+        leverage = "-"
+        if market_type == "future":
+            # Semakin besar volatilitas (ATR), semakin kecil leverage yang disarankan
+            volatility_pct = (atr / close) * 100
+            if volatility_pct > 3: # Volatilitas sangat tinggi (micin futures)
+                margin_mode = "Isolated"
+                leverage = "5x - 10x"
+            elif volatility_pct > 1.5:
+                margin_mode = "Cross/Isolated"
+                leverage = "10x - 15x"
+            else: # Stabil (BTC/ETH)
+                margin_mode = "Cross"
+                leverage = "20x - 50x"
+                
         if signal == "Neutral":
             return None # Skip jika netral
             
@@ -94,7 +110,9 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
             "target2": target2,
             "stop_loss": stop_loss,
             "score": score,
-            "market": market_type.upper()
+            "market": market_type.upper(),
+            "margin_mode": margin_mode,
+            "leverage": leverage
         }
         
     except Exception as e:

@@ -72,6 +72,7 @@ def run_binance_scan():
         for res in top_futures:
             msg += f"*{res['ticker']}* {res['signal']}\n"
             msg += f"Entry: {res['close']:.6f}\n"
+            msg += f"⚙️ Margin: {res['margin_mode']} | 🚀 Lev: {res['leverage']}\n"
             msg += f"🎯 TP 1: {res['target1']} | 🎯 TP 2: {res['target2']}\n"
             msg += f"🛑 SL: {res['stop_loss']}\n\n"
             
