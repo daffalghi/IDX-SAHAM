@@ -34,7 +34,9 @@ def run_binance_scan():
         print(f"Ditemukan {len(spot_symbols)} koin Spot dan {len(futures_symbols)} koin Futures.")
         
     except Exception as e:
-        print(f"Gagal terhubung ke Binance: {e}")
+        err_msg = f"Gagal terhubung ke Binance: {e}"
+        print(err_msg)
+        send_telegram_message(f"⚠️ *ERROR SISTEM Kripto:*\n\n{err_msg}")
         return
         
     spot_signals = []
