@@ -11,13 +11,13 @@ load_dotenv()
 def run_binance_scan():
     print("Memulai proses Auto-Scan Binance (Spot & Futures All-Coins)...")
     
-    # 1. Inisialisasi CCXT Bybit (Bypass Blokir IP US Binance)
+    # 1. Inisialisasi CCXT MEXC (Bypass Blokir IP US Binance & Bybit)
     try:
-        exchange = ccxt.bybit({
+        exchange = ccxt.mexc({
             'enableRateLimit': True,
         })
         
-        print("Menarik daftar seluruh koin USDT dari Bybit (Sebagai referensi koin Binance)...")
+        print("Menarik daftar seluruh koin USDT dari MEXC (Pusat Koin Micin)...")
         markets = exchange.load_markets()
         
         # Ambil semua simbol USDT yang aktif
@@ -27,7 +27,7 @@ def run_binance_scan():
         print(f"Ditemukan {len(spot_symbols)} koin Spot dan {len(futures_symbols)} koin Futures.")
         
     except Exception as e:
-        err_msg = f"Gagal terhubung ke Bybit: {e}"
+        err_msg = f"Gagal terhubung ke MEXC: {e}"
         print(err_msg)
         send_telegram_message(f"⚠️ *ERROR SISTEM Kripto:*\n\n{err_msg}")
         return
@@ -65,7 +65,7 @@ def run_binance_scan():
     top_spot = spot_signals[:5]
     top_futures = futures_signals[:5]
     
-    msg = "🤖 *CRYPTO (BYBIT/BINANCE) 1H SCANNER*\n\n"
+    msg = "🤖 *CRYPTO (MEXC/BINANCE) 1H SCANNER*\n\n"
     
     if top_futures:
         msg += "📈 *TOP 5 FUTURES SIGNALS*\n"
