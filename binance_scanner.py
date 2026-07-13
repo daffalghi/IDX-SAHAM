@@ -11,30 +11,23 @@ load_dotenv()
 def run_binance_scan():
     print("Memulai proses Auto-Scan Binance (Spot & Futures All-Coins)...")
     
-    # 1. Inisialisasi CCXT Spot & Futures
+    # 1. Inisialisasi CCXT Bybit (Bypass Blokir IP US Binance)
     try:
-        spot_exchange = ccxt.binance({
+        exchange = ccxt.bybit({
             'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}
         })
         
-        futures_exchange = ccxt.binance({
-            'enableRateLimit': True,
-            'options': {'defaultType': 'future'}
-        })
-        
-        print("Menarik daftar seluruh koin USDT dari Binance...")
-        spot_markets = spot_exchange.load_markets()
-        futures_markets = futures_exchange.load_markets()
+        print("Menarik daftar seluruh koin USDT dari Bybit (Sebagai referensi koin Binance)...")
+        markets = exchange.load_markets()
         
         # Ambil semua simbol USDT yang aktif
-        spot_symbols = [s for s in spot_markets if s.endswith('/USDT') and spot_markets[s]['active']]
-        futures_symbols = [s for s in futures_markets if s.endswith('/USDT') and futures_markets[s]['active']]
+        spot_symbols = [s for s in markets if markets[s].get('spot') and s.endswith('/USDT') and markets[s].get('active')]
+        futures_symbols = [s for s in markets if markets[s].get('swap') and s.endswith('/USDT:USDT') and markets[s].get('active')]
         
         print(f"Ditemukan {len(spot_symbols)} koin Spot dan {len(futures_symbols)} koin Futures.")
         
     except Exception as e:
-        err_msg = f"Gagal terhubung ke Binance: {e}"
+        err_msg = f"Gagal terhubung ke Bybit: {e}"
         print(err_msg)
         send_telegram_message(f"⚠️ *ERROR SISTEM Kripto:*\n\n{err_msg}")
         return
@@ -45,7 +38,7 @@ def run_binance_scan():
     # 2. Pindai Koin Futures (Prioritas)
     print("\n[+] Memindai Pasar Futures...")
     for sym in futures_symbols:
-        res = get_crypto_recommendation(futures_exchange, sym, market_type="future", timeframe="1h")
+        res = get_crypto_recommendation(exchange, sym, market_type="future", timeframe="1h")
         if res:
             futures_signals.append(res)
             print(f"   -> [FUTURES] {sym}: {res['signal']} (Score: {res['score']})")
@@ -56,7 +49,7 @@ def run_binance_scan():
     # Batasi spot max 300 koin teratas berdasarkan volume agar tidak terlalu lama (opsional)
     # Di sini kita scan semua untuk menangkap micin
     for sym in spot_symbols:
-        res = get_crypto_recommendation(spot_exchange, sym, market_type="spot", timeframe="1h")
+        res = get_crypto_recommendation(exchange, sym, market_type="spot", timeframe="1h")
         if res:
             spot_signals.append(res)
             print(f"   -> [SPOT] {sym}: {res['signal']} (Score: {res['score']})")
@@ -72,7 +65,7 @@ def run_binance_scan():
     top_spot = spot_signals[:5]
     top_futures = futures_signals[:5]
     
-    msg = "🤖 *BINANCE 1H ALL-COIN SCANNER*\n\n"
+    msg = "🤖 *CRYPTO (BYBIT/BINANCE) 1H SCANNER*\n\n"
     
     if top_futures:
         msg += "📈 *TOP 5 FUTURES SIGNALS*\n"
