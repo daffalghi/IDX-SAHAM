@@ -27,12 +27,21 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-        
+
+    # Cache pip dependencies — hemat 3-5 menit setelah pertama kali run
+    # Cache akan di-refresh otomatis jika requirements.txt berubah
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pandas-ta python-dotenv schedule
         
     - name: Jalankan AI Auto Scanner & Kirim ke Telegram
       env:

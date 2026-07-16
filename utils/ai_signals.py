@@ -231,17 +231,25 @@ def get_stock_recommendation(ticker: str):
             score -= 10
             
         # --- THRESHOLD DECISION ---
+        # Kalkulasi level harga kunci berbasis ATR
+        sl_price  = close - (1.5 * atr)          # Stop Loss: 1.5× ATR di bawah close
+        tp1_price = close + (1.5 * atr)          # TP1 Konservatif: R:R 1:1
+        tp2_price = close + (3.0 * atr)          # TP2 Agresif: R:R 1:2
+        risk      = close - sl_price
+        rr_ratio  = round((tp1_price - close) / risk, 2) if risk > 0 else 1.0
+        tp1_pct   = round((tp1_price - close) / close * 100, 1)
+        tp2_pct   = round((tp2_price - close) / close * 100, 1)
+        sl_pct    = round((close - sl_price)  / close * 100, 1)
+
         if score >= dynamic_threshold:
             signal = "Strong Buy"
             action = "BELI (Aggressive)"
             target = "Swing Hold (1-3 Minggu) selama harga di atas EMA-20"
-            stop_loss = f"Trailing Stop/Cut Loss jika tutup di bawah Rp {int(close - (1.5 * atr))}"
             alasan = f"SCORE {score}/100: Trend & Fundamental luar biasa. Market regime sangat mendukung."
         elif score >= 70:
             signal = "Buy"
             action = "BELI (Partial)"
             target = "Swing Pendek (Hold sampai resisten/Upper BB)"
-            stop_loss = f"Cut Loss jika tutup di bawah EMA-20 (Rp {int(ema20)})"
             alasan = f"SCORE {score}/100: Memenuhi standar kuantitatif institusi, momentum stabil."
         else:
             return {
@@ -256,10 +264,9 @@ def get_stock_recommendation(ticker: str):
                 "pbv": round(info.get('priceToBook', 0) or 0, 2),
                 "news": news_desc
             }
-            
+
         strategy = f"👉 **Tindakan**: {action}\n"
         strategy += f"⏱️ **Target Hold**: {target}\n"
-        strategy += f"🛑 **Risk / Exit Rule**: {stop_loss}\n"
         strategy += f"💡 **Catatan**: Jual jika terjadi MACD Death Cross!\n"
         strategy += f"🎯 **Alasan**: {alasan}"
         
@@ -271,6 +278,13 @@ def get_stock_recommendation(ticker: str):
             "rsi": rsi,
             "macd": "Bullish" if macd_l > macd_s else "Bearish",
             "close": close,
+            "sl": int(sl_price),
+            "tp1": int(tp1_price),
+            "tp2": int(tp2_price),
+            "sl_pct": sl_pct,
+            "tp1_pct": tp1_pct,
+            "tp2_pct": tp2_pct,
+            "rr": rr_ratio,
             "pe": round(per, 2) if per != 999 else "N/A",
             "pbv": round(info.get('priceToBook', 0) or 0, 2),
             "news": news_desc
