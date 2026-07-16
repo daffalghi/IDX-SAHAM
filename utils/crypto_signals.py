@@ -144,14 +144,15 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
         volume_surge = vol_ratio > 1.5
 
         # Deteksi arah tren dominan
-        long_bias  = close > ema50 and ema9 > ema21
-        short_bias = close < ema50 and ema9 < ema21
+        # Diperlonggar: cukup salah satu kondisi EMA terpenuhi + konfirmasi MACD
+        long_bias  = (close > ema50 or ema9 > ema21) and macd_l > macd_s
+        short_bias = (close < ema50 or ema9 < ema21) and macd_l < macd_s
 
         # ── 1. MANDATORY FILTER ─────────────────────────────────────────────
-        if adx_val < 20:                       return None  # Sideways, tidak layak
+        if adx_val < 15:                       return None  # Sideways murni, tidak layak
         if not long_bias and not short_bias:   return None  # Tidak ada tren jelas
-        if long_bias  and rsi > 78:            return None  # Extreme overbought
-        if short_bias and rsi < 22:            return None  # Extreme oversold
+        if long_bias  and rsi > 80:            return None  # Extreme overbought
+        if short_bias and rsi < 20:            return None  # Extreme oversold
 
         direction = "LONG" if long_bias else "SHORT"
         score = 0
@@ -247,9 +248,9 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
                 score -= 8   # Bullish divergence untuk SHORT
 
         # ── 6. KEPUTUSAN FINAL ───────────────────────────────────────────────
-        if score >= 85:
+        if score >= 75:
             signal = f"💥 STRONG {'LONG' if direction == 'LONG' else 'SHORT'}"
-        elif score >= 65:
+        elif score >= 55:
             signal = f"{'🚀 LONG' if direction == 'LONG' else '🩸 SHORT'}"
         else:
             return None   # Tidak cukup kuat → skip
