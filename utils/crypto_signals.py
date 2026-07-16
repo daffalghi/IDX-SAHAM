@@ -143,16 +143,21 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
         vol_ratio    = round(curr_vol / avg_vol, 2) if avg_vol > 0 else 1.0
         volume_surge = vol_ratio > 1.5
 
-        # Deteksi arah tren dominan
-        # Diperlonggar: cukup salah satu kondisi EMA terpenuhi + konfirmasi MACD
-        long_bias  = (close > ema50 or ema9 > ema21) and macd_l > macd_s
-        short_bias = (close < ema50 or ema9 < ema21) and macd_l < macd_s
+        # Deteksi arah tren — cukup satu kondisi EMA, MACD hanya di scoring
+        long_bias  = close > ema21 or ema9 > ema21
+        short_bias = close < ema21 or ema9 < ema21
 
-        # ── 1. MANDATORY FILTER ─────────────────────────────────────────────
-        if adx_val < 15:                       return None  # Sideways murni, tidak layak
-        if not long_bias and not short_bias:   return None  # Tidak ada tren jelas
-        if long_bias  and rsi > 80:            return None  # Extreme overbought
-        if short_bias and rsi < 20:            return None  # Extreme oversold
+        # ── 1. MANDATORY FILTER (minimal, keputusan diserahkan ke scoring) ──
+        if adx_val < 12:                       return None  # Benar-benar flat/choppy
+        if not long_bias and not short_bias:   return None  # Tidak ada tren sama sekali
+        if long_bias  and rsi > 85:            return None  # Extreme overbought parah
+        if short_bias and rsi < 15:            return None  # Extreme oversold parah
+
+        # Prioritaskan arah: jika keduanya True, ambil yang lebih kuat
+        if long_bias and short_bias:
+            long_bias  = macd_l >= macd_s   # MACD sebagai tiebreaker
+            short_bias = not long_bias
+
 
         direction = "LONG" if long_bias else "SHORT"
         score = 0
@@ -248,9 +253,9 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
                 score -= 8   # Bullish divergence untuk SHORT
 
         # ── 6. KEPUTUSAN FINAL ───────────────────────────────────────────────
-        if score >= 75:
+        if score >= 65:
             signal = f"💥 STRONG {'LONG' if direction == 'LONG' else 'SHORT'}"
-        elif score >= 55:
+        elif score >= 45:
             signal = f"{'🚀 LONG' if direction == 'LONG' else '🩸 SHORT'}"
         else:
             return None   # Tidak cukup kuat → skip
