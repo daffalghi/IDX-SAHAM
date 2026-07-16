@@ -1,18 +1,31 @@
+import math
 import pandas as pd
 import pandas_ta as ta
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HELPER: BTC Context (Barometer Pasar Kripto)
-# Dijalankan SEKALI sebelum loop scan, bukan per koin — efisien & tidak delay
-# ──────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER: NaN-safe float extractor
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _safe(val, fallback):
+    """Return float(val) jika valid, else fallback."""
+    try:
+        v = float(val)
+        return fallback if math.isnan(v) or math.isinf(v) else v
+    except Exception:
+        return fallback
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER: BTC Context  (diambil sekali sebelum loop scan)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_btc_context(exchange):
     """
-    Ambil kondisi BTC sebagai 'IHSG'-nya pasar kripto.
-    Hasilnya dipass ke setiap get_crypto_recommendation() agar tidak refetch.
+    Ambil kondisi BTC sebagai barometer pasar kripto.
+    Hasilnya di-pass ke get_crypto_recommendation() agar tidak refetch.
     """
     try:
-        # Coba ambil dari futures dulu, fallback ke spot
         try:
             ohlcv = exchange.fetch_ohlcv('BTC/USDT:USDT', '1h', limit=60)
         except Exception:
@@ -22,13 +35,13 @@ def get_btc_context(exchange):
             raise ValueError("Data BTC tidak cukup")
 
         df    = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        close = df['close'].iloc[-1]
-        ema21 = ta.ema(df['close'], length=21).iloc[-1]
-        ema50 = ta.ema(df['close'], length=50).iloc[-1]
-        rsi   = ta.rsi(df['close'], length=14).iloc[-1]
+        close = float(df['close'].iloc[-1])
+        ema50 = _safe(ta.ema(df['close'], length=50).iloc[-1], close)
+        ema21 = _safe(ta.ema(df['close'], length=21).iloc[-1], close)
+        rsi   = _safe(ta.rsi(df['close'], length=14).iloc[-1], 50.0)
 
         btc_bullish = close > ema50
-        btc_strong  = close > ema50 and ema21 > ema50  # Bull market kuat
+        btc_strong  = close > ema50 and ema21 > ema50
 
         status = '🔥 Strong Bull' if btc_strong else ('🟢 Bullish' if btc_bullish else '🔴 Bearish')
         print(f"[BTC] Close: {close:.2f} | EMA50: {ema50:.2f} | RSI: {rsi:.1f} | {status}")
@@ -40,222 +53,148 @@ def get_btc_context(exchange):
             'close':   close,
         }
     except Exception as e:
-        print(f"[WARN] Gagal ambil BTC context: {e} — menggunakan default Netral.")
+        print(f"[WARN] Gagal ambil BTC context: {e} — default Netral.")
         return {'bullish': True, 'strong': False, 'rsi': 50.0, 'close': 0}
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HELPER: Funding Rate (Eksklusif Futures)
-# ──────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER: Funding Rate  (khusus futures)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_funding_rate(exchange, symbol):
-    """
-    Ambil funding rate untuk futures.
-    - Negatif      → short crowded  → kondusif untuk LONG
-    - Positif tinggi → long crowded → bahaya untuk LONG
-    Returns float atau None jika tidak tersedia.
-    """
     try:
-        fr_data = exchange.fetch_funding_rate(symbol)
-        return fr_data.get('fundingRate', None)
+        data = exchange.fetch_funding_rate(symbol)
+        return data.get('fundingRate') if data else None
     except Exception:
         return None
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN ENGINE: Sistem Scoring 100 Poin
-# ──────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future",
                                timeframe: str = "1h", btc_context: dict = None):
     """
-    Analisis koin dengan sistem scoring berlapis 100 poin.
+    Analisis koin dengan deteksi binary yang terbukti bekerja + output kaya.
 
-    Kategori Scoring:
-      A. Trend Alignment         (25 poin)
-      B. Momentum Konfirmasi     (25 poin)
-      C. Volume & Smart Money    (20 poin)
-      D. Kekuatan Tren / ADX     (15 poin)
-      E. Price Action & Struktur (15 poin)
-      + Bonus Makro BTC Context & Funding Rate
-      - Penalti volatilitas, divergence, extreme RSI
+    Syarat LONG  : (close > EMA21 ATAU EMA9 > EMA21) DAN MACD bullish DAN RSI > 40
+    Syarat SHORT : (close < EMA21 ATAU EMA9 < EMA21) DAN MACD bearish DAN RSI < 60
+    Spot         : tambah wajib volume surge (1.5×)
 
-    market_type : "future" | "spot"
-    btc_context : dict dari get_btc_context() — dipass dari luar agar efisien
+    Skor mulai 60 (base). Semua kondisi tambahan hanya BONUS — tidak ada penalti.
     """
     try:
-        # Ambil 100 candle terakhir
+        # ── Data ─────────────────────────────────────────────────────────────
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
-        if not ohlcv or len(ohlcv) < 60:
+        if not ohlcv or len(ohlcv) < 50:
             return None
 
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
-        # ── FEATURE ENGINEERING ─────────────────────────────────────────────
+        # ── Indikator ────────────────────────────────────────────────────────
         df['EMA_9']  = ta.ema(df['close'], length=9)
         df['EMA_21'] = ta.ema(df['close'], length=21)
         df['EMA_50'] = ta.ema(df['close'], length=50)
-        df['VWAP']   = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
         df['RSI']    = ta.rsi(df['close'], length=14)
-        df['OBV']    = ta.obv(df['close'], df['volume'])
         df['ATR']    = ta.atr(df['high'], df['low'], df['close'], length=14)
+        df['OBV']    = ta.obv(df['close'], df['volume'])
 
-        macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
-        if macd is not None and not macd.empty:
-            df = pd.concat([df, macd], axis=1)
+        macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9)
+        if macd_df is not None and not macd_df.empty:
+            df = pd.concat([df, macd_df], axis=1)
 
-        stoch = ta.stoch(df['high'], df['low'], df['close'])
-        if stoch is not None and not stoch.empty:
-            df = pd.concat([df, stoch], axis=1)
+        stoch_df = ta.stoch(df['high'], df['low'], df['close'])
+        if stoch_df is not None and not stoch_df.empty:
+            df = pd.concat([df, stoch_df], axis=1)
 
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
         if adx_df is not None and not adx_df.empty:
             df = pd.concat([df, adx_df], axis=1)
 
-        bbands = ta.bbands(df['close'], length=20, std=2)
-        if bbands is not None and not bbands.empty:
-            df = pd.concat([df, bbands], axis=1)
-
-        # ── EKSTRAKSI NILAI ──────────────────────────────────────────────────
+        # ── Ekstrak nilai terakhir (NaN-safe) ────────────────────────────────
         last = df.iloc[-1]
 
-        close    = last['close']
-        open_c   = last['open']
-        ema9     = last.get('EMA_9',  close)
-        ema21    = last.get('EMA_21', close)
-        ema50    = last.get('EMA_50', close)
-        vwap     = last.get('VWAP',   close)
-        rsi      = last.get('RSI',    50)
-        macd_l   = last.get('MACD_12_26_9',  0)
-        macd_s   = last.get('MACDs_12_26_9', 0)
-        stoch_k  = last.get('STOCHk_14_3_3', 50)
-        stoch_d  = last.get('STOCHd_14_3_3', 50)
-        atr      = last.get('ATRr_14', close * 0.02)
-        adx_val  = last.get('ADX_14', 0)
-        bb_upper = last.get('BBU_20_2.0', close * 1.1)
-        bb_lower = last.get('BBL_20_2.0', close * 0.9)
-        obv_curr = last.get('OBV', 0)
-        obv_prev = df['OBV'].iloc[-5] if len(df) > 5 else obv_curr
+        close   = float(last['close'])
+        open_c  = float(last['open'])
+        ema9    = _safe(last.get('EMA_9'),  close)
+        ema21   = _safe(last.get('EMA_21'), close)
+        ema50   = _safe(last.get('EMA_50'), close)
+        rsi     = _safe(last.get('RSI'),    50.0)
+        atr     = _safe(last.get('ATRr_14'), close * 0.02)
+        macd_l  = _safe(last.get('MACD_12_26_9'),  0.0)
+        macd_s  = _safe(last.get('MACDs_12_26_9'), 0.0)
+        stoch_k = _safe(last.get('STOCHk_14_3_3'), 50.0)
+        stoch_d = _safe(last.get('STOCHd_14_3_3'), 50.0)
+        adx_val = _safe(last.get('ADX_14'), 0.0)
+        obv_now = _safe(last.get('OBV'), 0.0)
+        obv_old = _safe(df['OBV'].iloc[-5] if len(df) > 5 else 0.0, 0.0)
 
         avg_vol      = df['volume'].rolling(20).mean().iloc[-2]
-        curr_vol     = df['volume'].iloc[-1]
-        vol_ratio    = round(curr_vol / avg_vol, 2) if avg_vol > 0 else 1.0
+        curr_vol     = float(df['volume'].iloc[-1])
+        avg_vol_f    = float(avg_vol) if avg_vol and not math.isnan(float(avg_vol)) else 1.0
+        vol_ratio    = round(curr_vol / avg_vol_f, 2) if avg_vol_f > 0 else 1.0
         volume_surge = vol_ratio > 1.5
+        macd_bull    = macd_l > macd_s
 
-        # Deteksi arah tren — cukup satu kondisi EMA, MACD hanya di scoring
-        long_bias  = close > ema21 or ema9 > ema21
-        short_bias = close < ema21 or ema9 < ema21
+        # ── Deteksi arah (binary — terbukti bekerja) ─────────────────────────
+        long_cond  = (close > ema21 or ema9 > ema21) and macd_bull     and rsi > 40
+        short_cond = (close < ema21 or ema9 < ema21) and (not macd_bull) and rsi < 60
 
-        # ── 1. MANDATORY FILTER (minimal, keputusan diserahkan ke scoring) ──
-        if adx_val < 12:                       return None  # Benar-benar flat/choppy
-        if not long_bias and not short_bias:   return None  # Tidak ada tren sama sekali
-        if long_bias  and rsi > 85:            return None  # Extreme overbought parah
-        if short_bias and rsi < 15:            return None  # Extreme oversold parah
+        # Spot: wajib volume surge untuk filter pump-dump
+        if market_type == "spot":
+            long_cond  = long_cond  and volume_surge
+            short_cond = short_cond and volume_surge
 
-        # Prioritaskan arah: jika keduanya True, ambil yang lebih kuat
-        if long_bias and short_bias:
-            long_bias  = macd_l >= macd_s   # MACD sebagai tiebreaker
-            short_bias = not long_bias
+        if not long_cond and not short_cond:
+            return None
 
+        direction = "LONG" if long_cond else "SHORT"
 
-        direction = "LONG" if long_bias else "SHORT"
-        score = 0
+        # ── Scoring (Base 60, hanya bonus) ───────────────────────────────────
+        score = 60
 
-        # ── 2. A: TREND ALIGNMENT (25 poin) ─────────────────────────────────
+        if volume_surge:   score += 15   # Ledakan volume — sinyal kuat
+
         if direction == "LONG":
-            if close > ema50:  score += 10
-            if ema9  > ema21:  score += 8
-            if ema21 > ema50:  score += 7
+            if close > ema50:                    score += 8   # Di atas MA jangka menengah
+            if ema9  > ema21:                    score += 5   # EMA cross bullish
+            if 50 <= rsi <= 70:                  score += 5   # RSI sweet spot
+            if stoch_k > stoch_d and stoch_k > 30: score += 4
+            if obv_now > obv_old:                score += 3   # Smart money masuk
+            if adx_val > 25:                     score += 5   # Tren kuat
         else:
-            if close < ema50:  score += 10
-            if ema9  < ema21:  score += 8
-            if ema21 < ema50:  score += 7
+            if close < ema50:                    score += 8
+            if ema9  < ema21:                    score += 5
+            if 30 <= rsi <= 50:                  score += 5
+            if stoch_k < stoch_d and stoch_k < 70: score += 4
+            if obv_now < obv_old:                score += 3
+            if adx_val > 25:                     score += 5
 
-        # ── 2. B: MOMENTUM KONFIRMASI (25 poin) ─────────────────────────────
-        if direction == "LONG":
-            if 50 <= rsi <= 70:                             score += 10
-            elif rsi > 70:                                  score += 5   # Bullish tapi memanas
-            if macd_l > macd_s:                             score += 8
-            if stoch_k > stoch_d and stoch_k > 30:          score += 7
-        else:
-            if 30 <= rsi <= 50:                             score += 10
-            elif rsi < 30:                                  score += 5
-            if macd_l < macd_s:                             score += 8
-            if stoch_k < stoch_d and stoch_k < 70:          score += 7
-
-        # ── 2. C: VOLUME & SMART MONEY (20 poin) ────────────────────────────
-        if volume_surge:                                    score += 10
-        if direction == "LONG"  and obv_curr > obv_prev:   score += 10
-        if direction == "SHORT" and obv_curr < obv_prev:   score += 10
-
-        # ── 2. D: KEKUATAN TREN / ADX (15 poin) ─────────────────────────────
-        if adx_val > 20: score += 5
-        if adx_val > 25: score += 5
-        if adx_val > 35: score += 5
-
-        # ── 2. E: PRICE ACTION & STRUKTUR (15 poin) ─────────────────────────
-        if direction == "LONG":
-            if close > vwap:               score += 8
-            if close < (bb_upper * 0.98):  score += 4   # Belum overbought
-            if close > open_c:             score += 3   # Candle bullish
-        else:
-            if close < vwap:               score += 8
-            if close > (bb_lower * 1.02):  score += 4   # Belum oversold ekstrem
-            if close < open_c:             score += 3   # Candle bearish
-
-        # ── 3. BONUS MAKRO: BTC CONTEXT (hanya bonus, tidak ada penalti) ───────
+        # BTC context bonus
         btc = btc_context or {'bullish': True, 'strong': False}
-        if direction == "LONG"  and btc['bullish']:  score += 3
-        if direction == "LONG"  and btc['strong']:   score += 2   # Bonus tambahan bull kuat
-        if direction == "SHORT" and not btc['bullish']: score += 3  # SHORT di bear market
+        if direction == "LONG"  and btc.get('bullish'):       score += 3
+        if direction == "LONG"  and btc.get('strong'):        score += 2
+        if direction == "SHORT" and not btc.get('bullish'):   score += 3
 
-        # ── 4. BONUS: FUNDING RATE (Khusus Futures) ─────────────────────────
-        funding_desc = "N/A"
-        if market_type == "future":
-            funding_rate = get_funding_rate(exchange, symbol)
-            if funding_rate is not None:
-                fr_pct = funding_rate * 100
-                if direction == "LONG":
-                    if funding_rate < -0.005:     # Short crowded → kondusif LONG
-                        score += 5
-                        funding_desc = f"{fr_pct:.4f}% 🟢 Short crowded"
-                    elif funding_rate > 0.10:     # Long crowded → bahaya
-                        funding_desc = f"{fr_pct:.4f}% 🔴 Long crowded"
-                    else:
-                        funding_desc = f"{fr_pct:.4f}% ⚪ Netral"
-                else:  # SHORT
-                    if funding_rate > 0.05:       # Long crowded → kondusif SHORT
-                        score += 5
-                        funding_desc = f"{fr_pct:.4f}% 🟢 Long crowded"
-                    elif funding_rate < -0.01:    # Short crowded → bahaya SHORT
-                        funding_desc = f"{fr_pct:.4f}% 🔴 Short crowded"
-                    else:
-                        funding_desc = f"{fr_pct:.4f}% ⚪ Netral"
-
-        # ── 5. PENALTI RINGAN (hanya kasus ekstrem) ────────────────────────
-        atr_pct = (atr / close) * 100 if close > 0 else 0
-        # Hanya penalti untuk volatilitas SANGAT ekstrem (micin liar > 8%)
-        if atr_pct > 8:
-            score -= 5
-
-        # ── 6. KEPUTUSAN FINAL ───────────────────────────────────────────────
-        if score >= 55:
+        # ── Label sinyal ─────────────────────────────────────────────────────
+        if score >= 85:
             signal = f"💥 STRONG {'LONG' if direction == 'LONG' else 'SHORT'}"
-        elif score >= 35:
+        else:
             signal = f"{'🚀 LONG' if direction == 'LONG' else '🩸 SHORT'}"
-        else:
-            return None   # Tidak cukup kuat → skip
 
-        # ── KALKULASI LEVEL HARGA (ATR-based) ───────────────────────────────
+        # ── TP / SL / RR (ATR-based) ─────────────────────────────────────────
+        atr_pct = (atr / close) * 100 if close > 0 else 2.0
+
         if direction == "LONG":
-            sl_price  = close - (1.5 * atr)
-            tp1_price = close + (1.5 * atr)
-            tp2_price = close + (3.0 * atr)
+            sl_price  = close - 1.5 * atr
+            tp1_price = close + 1.5 * atr
+            tp2_price = close + 3.0 * atr
         else:
-            sl_price  = close + (1.5 * atr)
-            tp1_price = close - (1.5 * atr)
-            tp2_price = close - (3.0 * atr)
+            sl_price  = close + 1.5 * atr
+            tp1_price = close - 1.5 * atr
+            tp2_price = close - 3.0 * atr
 
         risk    = abs(close - sl_price)
         rr      = round(abs(tp1_price - close) / risk, 2) if risk > 0 else 1.0
@@ -263,7 +202,7 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
         tp2_pct = round(abs(tp2_price - close) / close * 100, 2)
         sl_pct  = round(abs(close - sl_price)  / close * 100, 2)
 
-        # ── REKOMENDASI LEVERAGE (Berbasis Volatilitas ATR) ──────────────────
+        # ── Leverage (berbasis volatilitas ATR) ──────────────────────────────
         margin_mode = "-"
         leverage    = "-"
         if market_type == "future":
@@ -273,8 +212,28 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
                 margin_mode, leverage = "Isolated",       "5x – 10x"
             elif atr_pct > 0.8:
                 margin_mode, leverage = "Cross/Isolated", "10x – 15x"
-            else:                                         # BTC/ETH stabil
+            else:
                 margin_mode, leverage = "Cross",          "20x – 50x"
+
+        # ── Funding rate ─────────────────────────────────────────────────────
+        funding_desc = "N/A"
+        if market_type == "future":
+            try:
+                fr_data = exchange.fetch_funding_rate(symbol)
+                fr = fr_data.get('fundingRate') if fr_data else None
+                if fr is not None:
+                    fr = float(fr)
+                    fr_pct = fr * 100
+                    if direction == "LONG" and fr < -0.005:
+                        score += 5
+                        funding_desc = f"{fr_pct:.4f}% 🟢 Short crowded"
+                    elif direction == "SHORT" and fr > 0.05:
+                        score += 5
+                        funding_desc = f"{fr_pct:.4f}% 🟢 Long crowded"
+                    else:
+                        funding_desc = f"{fr_pct:.4f}%"
+            except Exception:
+                pass
 
         return {
             "ticker":       symbol,
@@ -284,7 +243,7 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
             "close":        close,
             "rsi":          round(rsi, 1),
             "adx":          round(adx_val, 1),
-            "macd":         "Bullish" if macd_l > macd_s else "Bearish",
+            "macd":         "Bullish" if macd_bull else "Bearish",
             "vol_ratio":    vol_ratio,
             "volume_surge": volume_surge,
             "funding_rate": funding_desc,
@@ -302,5 +261,4 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
         }
 
     except Exception:
-        return None   # Silenced — hindari spam log saat scan ratusan koin
-
+        return None   # Silenced — hindari spam saat scan ratusan koin
