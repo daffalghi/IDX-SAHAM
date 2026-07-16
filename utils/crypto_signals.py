@@ -204,13 +204,11 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
             if close > (bb_lower * 1.02):  score += 4   # Belum oversold ekstrem
             if close < open_c:             score += 3   # Candle bearish
 
-        # ── 3. BONUS MAKRO: BTC CONTEXT ─────────────────────────────────────
+        # ── 3. BONUS MAKRO: BTC CONTEXT (hanya bonus, tidak ada penalti) ───────
         btc = btc_context or {'bullish': True, 'strong': False}
-        if direction == "LONG":
-            if not btc['bullish']:   score -= 5    # BTC bearish = angin melawan
-            elif btc['strong']:      score += 3    # BTC strong bull = bonus
-        else:  # SHORT
-            if btc['bullish']:       score -= 5    # BTC bullish = angin melawan SHORT
+        if direction == "LONG"  and btc['bullish']:  score += 3
+        if direction == "LONG"  and btc['strong']:   score += 2   # Bonus tambahan bull kuat
+        if direction == "SHORT" and not btc['bullish']: score += 3  # SHORT di bear market
 
         # ── 4. BONUS: FUNDING RATE (Khusus Futures) ─────────────────────────
         funding_desc = "N/A"
@@ -223,7 +221,6 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
                         score += 5
                         funding_desc = f"{fr_pct:.4f}% 🟢 Short crowded"
                     elif funding_rate > 0.10:     # Long crowded → bahaya
-                        score -= 5
                         funding_desc = f"{fr_pct:.4f}% 🔴 Long crowded"
                     else:
                         funding_desc = f"{fr_pct:.4f}% ⚪ Netral"
@@ -232,30 +229,20 @@ def get_crypto_recommendation(exchange, symbol: str, market_type: str = "future"
                         score += 5
                         funding_desc = f"{fr_pct:.4f}% 🟢 Long crowded"
                     elif funding_rate < -0.01:    # Short crowded → bahaya SHORT
-                        score -= 3
                         funding_desc = f"{fr_pct:.4f}% 🔴 Short crowded"
                     else:
                         funding_desc = f"{fr_pct:.4f}% ⚪ Netral"
 
-        # ── 5. SISTEM PENALTI ────────────────────────────────────────────────
+        # ── 5. PENALTI RINGAN (hanya kasus ekstrem) ────────────────────────
         atr_pct = (atr / close) * 100 if close > 0 else 0
-
-        if atr_pct > 5:   # Volatilitas ekstrem (micin liar)
-            score -= 10
-
-        # Divergence check: harga & RSI berlawanan arah (sinyal melemah)
-        if len(df) > 5:
-            rsi_5ago   = df['RSI'].iloc[-5]
-            close_5ago = df['close'].iloc[-5]
-            if direction == "LONG"  and close > close_5ago and rsi < rsi_5ago:
-                score -= 8   # Bearish divergence untuk LONG
-            if direction == "SHORT" and close < close_5ago and rsi > rsi_5ago:
-                score -= 8   # Bullish divergence untuk SHORT
+        # Hanya penalti untuk volatilitas SANGAT ekstrem (micin liar > 8%)
+        if atr_pct > 8:
+            score -= 5
 
         # ── 6. KEPUTUSAN FINAL ───────────────────────────────────────────────
-        if score >= 65:
+        if score >= 55:
             signal = f"💥 STRONG {'LONG' if direction == 'LONG' else 'SHORT'}"
-        elif score >= 45:
+        elif score >= 35:
             signal = f"{'🚀 LONG' if direction == 'LONG' else '🩸 SHORT'}"
         else:
             return None   # Tidak cukup kuat → skip
